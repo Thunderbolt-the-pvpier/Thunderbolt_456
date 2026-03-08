@@ -99,7 +99,12 @@
       display: flex; align-items: flex-end; gap: 14px;
     }
 
-    .avatar-wrap { position: relative; flex-shrink: 0; }
+    .avatar-wrap {
+      position: relative; flex-shrink: 0;
+      /* Extra space so decoration can bleed outside */
+      padding: 20px;
+      margin: -20px;
+    }
 
     .avatar {
       width: 100px; height: 100px;
@@ -109,6 +114,7 @@
       overflow: hidden;
       box-shadow: 0 0 20px rgba(0,0,0,0.5), 0 0 0 2px var(--accent);
       animation: avatarPop 0.8s 0.2s cubic-bezier(0.16,1,0.3,1) both;
+      position: relative; z-index: 2;
     }
     @keyframes avatarPop {
       from { opacity:0; transform: scale(0.6); }
@@ -116,6 +122,38 @@
     }
     .avatar img { width:100%; height:100%; object-fit:cover; display:block; }
 
+    /* ── AVATAR DECORATION ── */
+    /*
+      Avatar = 100px. Deco image = 160px (30px bleed each side).
+      Three layer modes:
+        over   = sits fully on top of avatar face (z:3)
+        under  = sits fully behind avatar face (z:1)
+        frame  = DISCORD MODE:
+                   bot-copy (z:1) full image behind avatar
+                   top-copy (z:3) center hole masked so avatar shows through,
+                                  outer ring visible on top — exactly like Discord
+    */
+    .deco-img {
+      position: absolute;
+      width: 160px; height: 160px;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      object-fit: contain;
+      animation: avatarPop 0.8s 0.25s cubic-bezier(0.16,1,0.3,1) both;
+    }
+    .deco-over       { z-index: 3; }
+    .deco-under      { z-index: 1; }
+    /* frame-top: over avatar but center punched out (hole = 48px radius) */
+    .deco-frame-top  {
+      z-index: 3;
+      -webkit-mask: radial-gradient(circle 48px at center, transparent 47px, black 48px);
+              mask: radial-gradient(circle 48px at center, transparent 47px, black 48px);
+    }
+    /* frame-bot: behind avatar, shows full image */
+    .deco-frame-bot  { z-index: 1; }
+    /* hide pulse ring when deco is active */
+    .has-deco::before { display: none; }
     .status-dot {
       position: absolute; bottom: 6px; right: 6px;
       width: 22px; height: 22px;
@@ -384,10 +422,37 @@ const statusDotColor = {
   dnd: '#ed4245', idle: '#faa61a', online: '#3ba55d', offline: '#747f8d'
 };
 
+/* ── DECORATION BUILDER ── */
+/*
+  decoration in data.json:
+    { "file": "myframe.gif", "layer": "frame" }   ← Discord mode (recommended)
+    { "file": "glow.gif",    "layer": "under" }   ← aura/glow behind avatar
+    { "file": "hat.png",     "layer": "over"  }   ← fully on top
+    { "file": "",            "layer": "frame" }   ← empty = no decoration
+*/
+function buildDeco(deco) {
+  if (!deco || !deco.file) return { under: '', over: '', hasFrame: false };
+  const src   = 'deco/' + deco.file;
+  const layer = (deco.layer || 'frame').toLowerCase();
+  const img   = (cls) =>
+    `<img class="deco-img ${cls}" src="${src}" alt="" onerror="this.style.display='none'" />`;
+
+  if (layer === 'frame') {
+    // Render twice: one behind, one in front with center hole
+    return { under: img('deco-frame-bot'), over: img('deco-frame-top'), hasFrame: true };
+  } else if (layer === 'under') {
+    return { under: img('deco-under'), over: '', hasFrame: true };
+  } else {
+    return { under: '', over: img('deco-over'), hasFrame: true };
+  }
+}
+
 /* ── RENDER CARD ── */
 function renderCard(p) {
   const card = document.getElementById('card');
   const statusType = (p.status?.type || 'dnd').toLowerCase();
+  const deco = buildDeco(p.decoration);
+  const decoClass = deco.hasFrame ? 'has-deco' : '';
 
   card.innerHTML = `
     <!-- Banner -->
@@ -398,10 +463,12 @@ function renderCard(p) {
 
     <!-- Avatar row -->
     <div class="avatar-row">
-      <div class="avatar-wrap">
+      <div class="avatar-wrap ${decoClass}">
+        ${deco.under}
         <div class="avatar">
           <img src="${p.avatar}" alt="Avatar" onerror="this.style.display='none'" />
         </div>
+        ${deco.over}
         <div class="status-dot">
           <div class="status-dot-inner ${statusType}"></div>
         </div>
@@ -502,4 +569,5 @@ fetch('./data.json')
   });
 </script>
 </body>
-</html>
+  </html>
+  
